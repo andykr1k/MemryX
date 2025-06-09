@@ -1,9 +1,6 @@
-# run.py
-
 import subprocess
 import sys
 import time
-import os
 
 def main():
     """
@@ -21,20 +18,16 @@ def main():
     ]
     
     print("Starting FastAPI backend...")
-    # Using Popen to run the backend in a non-blocking way
     backend_process = subprocess.Popen(backend_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     
-    # Give the backend a moment to start up
-    time.sleep(5) 
-    
+    time.sleep(5)  # Give the backend time to spin up
+
     print("Starting Streamlit frontend...")
-    # Run the frontend
     frontend_process = subprocess.Popen(frontend_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     try:
         # Monitor the processes
         while True:
-            # You can add logic here to check if processes are alive
             if backend_process.poll() is not None:
                 print("Backend process has terminated.")
                 break
@@ -47,19 +40,18 @@ def main():
         print("\nShutting down services...")
         backend_process.terminate()
         frontend_process.terminate()
-        # Wait for processes to terminate
         backend_process.wait()
         frontend_process.wait()
         print("Shutdown complete.")
 
-
 if __name__ == "__main__":
-    # Check for dlib model. This is a common point of failure.
-    try:
-        import dlib
-        print("dlib is installed.")
-    except ImportError:
-        print("Error: dlib is not installed. Please install it.")
-        sys.exit(1)
+    # Optional: Check for critical packages
+    # try:
+    #     import insightface
+    #     import onnxruntime
+    #     print("InsightFace and ONNX Runtime are installed.")
+    # except ImportError as e:
+    #     print(f"Missing dependency: {e.name}. Please install it.")
+    #     sys.exit(1)
 
     main()

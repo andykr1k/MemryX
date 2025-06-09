@@ -7,16 +7,15 @@
       /image1.jpg, image2.jpg, ...
   /not_smiling
       /image1.jpg, image2.jpg, ...
-Create a Virtual Environment & Install Dependencies:Open your terminal in the project directory and run:# Create and activate virtual environment
-python -m venv venv
-### On Windows: .\venv\Scripts\activate
-### On macOS/Linux: source venv/bin/activate
 
-### Install cmake if you don't have it
-pip install cmake
+## Create a Virtual Environment & Install Dependencies:Open your terminal in the project directory and run:
+
+### Create and activate virtual environment
+python -m venv smile_env
+source smile_env/bin/activate
+
 
 ### Install all dependencies
 pip install -r requirements.txt
-Note: Installing dlib and tensorflow can take several minutes.▶️ How to Run the ApplicationThere are now two main steps: training and running.Step 1: Train the AI ModelBefore you can run the main app, you must train your custom CNN. Run the training script from your terminal:python train_model.py
-This will process the images in your dataset folder and create a smile_cnn_model.h5 file. You only need to do this once (or whenever you want to retrain the model).Step 2: Run the Main ApplicationAfter the model is trained, start the backend and frontend servers:python run.py
+
 Open the URL provided by Streamlit (e.g., http://localhost:8501) in your browser, click "START", and enjoy your custom-built smile detector!💻 Technologies UsedBackend: FastAPI, Uvicorn, TensorFlow, MediaPipe, face_recognition, OpenCVFrontend: Streamlit, streamlit-webrtc, RequestsLanguage: Python

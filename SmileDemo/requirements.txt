@@ -1,12 +1,12 @@
+opencv-python
 streamlit
 streamlit-webrtc
 fastapi
 uvicorn[standard]
 python-multipart
-dlib
-face_recognition
 numpy
 Pillow
 requests
 mediapipe
 tensorflow
+scikit-learn

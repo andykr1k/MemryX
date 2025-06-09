@@ -1,161 +1,181 @@
-# Frontend.py
-
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration
 import av
 import cv2
 import numpy as np
 import requests
-import base64
-from PIL import Image
-import io
-import face_recognition
+from sklearn.metrics.pairwise import cosine_similarity
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="Smile Counter",
-    page_icon="😊",
-    layout="wide",
-)
+# --- App config ---
+st.set_page_config(page_title="Smile AI", layout="wide")
 
-# --- Backend API URL ---
+# --- Session state init ---
+for key, default in {
+    'smile_count': 0,
+    'known_face_encodings': [],
+    'smiled_faces': set(),
+    'show_settings': False,
+    'tolerance': 0.6,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+# --- Constants ---
 API_URL = "http://127.0.0.1:8000/detect"
 
-# --- Session State Initialization ---
-if 'smile_count' not in st.session_state:
-    st.session_state.smile_count = 0
-if 'known_face_encodings' not in st.session_state:
-    st.session_state.known_face_encodings = []
-if 'smiled_faces' not in st.session_state:
-    st.session_state.smiled_faces = set()
-
-# --- UI Layout ---
-st.title("😊 Smile Counter")
-st.markdown("This application uses AI to detect smiles from your webcam. Your smile will only be counted once.")
-
-# Custom CSS for layout
+# --- Custom CSS ---
 st.markdown("""
-<style>
-    .header {
+    <style>
+    /* Hide Streamlit branding */
+    #MainMenu, footer, header {visibility: hidden;}
+    .block-container { padding: 0; margin: 0; }
+
+    /* App Header */
+    .app-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 1rem;
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        margin-bottom: 1rem;
+        padding: 1rem 2rem;
+        background-color: #111;
+        color: white;
+        position: fixed;
+        top: 0;
+        width: 100%;
+        z-index: 1000;
     }
-    .counter {
+
+    .logo-title {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+    }
+
+    .logo-title img {
+        height: 40px;
+    }
+
+    .hamburger {
         font-size: 2rem;
+        cursor: pointer;
+        user-select: none;
+        color: white;
+    }
+
+    .smile-count {
+        font-size: 1.5rem;
         font-weight: bold;
     }
-</style>
+
+    .spacer {
+        height: 80px;
+    }
+
+    /* Sidebar as drawer */
+    .css-1lcbmhc.e1fqkh3o3 { width: 300px !important; }
+    </style>
 """, unsafe_allow_html=True)
 
-# Header
-header = st.container()
-with header:
-    st.markdown('<div class="header">', unsafe_allow_html=True)
-    settings_col, counter_col = st.columns([1, 1])
-    
-    with settings_col:
-        with st.expander("Settings"):
-            st.slider("Face Match Tolerance", 0.1, 1.0, 0.6, 0.05, key="tolerance")
-            if st.button("Reset Smile Count"):
-                st.session_state.smile_count = 0
-                st.session_state.known_face_encodings = []
-                st.session_state.smiled_faces = set()
-                st.experimental_rerun()
+# --- App Header ---
+st.markdown("""
+    <div class="app-header">
+        <div class="spacer"></div>
+        <div class="logo-title">
+            <img src="https://memryx.com/wp-content/uploads/2021/05/MemryX-logo.svg">
+        </div>
+        <div class="smile-count">😊 {}</div>
+    </div>
+    <div class="spacer"></div>
+""".format(st.session_state.smile_count), unsafe_allow_html=True)
 
-    with counter_col:
-        st.markdown('<div style="text-align: right;">', unsafe_allow_html=True)
-        st.write("Live Smile Count:")
-        smile_counter_placeholder = st.empty()
-        smile_counter_placeholder.markdown(f'<p class="counter">{st.session_state.smile_count}</p>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-    st.markdown('</div>', unsafe_allow_html=True)
+# --- JS Hack for Sidebar Toggle ---
+st.markdown("""
+<script>
+    const hamburger = window.document.querySelector('.hamburger');
+    window.addEventListener('toggle-settings', () => {
+        const el = window.parent.document.querySelector('section[data-testid="stSidebar"]');
+        if (el.style.transform.includes('-300px')) {
+            el.style.transform = 'translateX(0px)';
+        } else {
+            el.style.transform = 'translateX(-300px)';
+        }
+    });
+</script>
+""", unsafe_allow_html=True)
 
+# --- Sidebar Settings ---
+with st.sidebar:
+    st.subheader("Settings")
+    st.slider("Face Match Threshold", 0.1, 1.0, st.session_state["tolerance"], 0.05, key="tolerance")
+    if st.button("Reset Smile Count"):
+        st.session_state.smile_count = 0
+        st.session_state.known_face_encodings = []
+        st.session_state.smiled_faces = set()
 
-# --- WebRTC Video Transformer ---
+# --- Smile Count Dynamic Update ---
+count_placeholder = st.empty()
+
+# --- Smile Detector Transformer ---
 class SmileDetector(VideoTransformerBase):
     def __init__(self):
         self.frame_count = 0
 
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
         img = frame.to_ndarray(format="bgr24")
-        
-        # Process every 5th frame to save resources
         self.frame_count += 1
         if self.frame_count % 5 != 0:
             return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-        # Convert image to bytes
         _, img_encoded = cv2.imencode(".jpg", img)
         files = {'file': ('image.jpg', img_encoded.tobytes(), 'image/jpeg')}
 
         try:
-            response = requests.post(API_URL, files=files, timeout=0.5)
-            response.raise_for_status()
-            data = response.json()
+            r = requests.post(API_URL, files=files, timeout=0.5)
+            r.raise_for_status()
+            faces = r.json()['faces']
 
-            for face in data['faces']:
+            for face in faces:
                 box = face['box']
-                encoding = np.array(face['encoding'])
+                encoding = np.array(face['encoding']).reshape(1, -1)
                 is_smiling = face['is_smiling']
-                
-                # Draw bounding box
-                color = (0, 255, 0) if is_smiling else (0, 0, 255)
-                cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]), color, 2)
-                
-                # Check if this face is already known
-                if len(st.session_state.known_face_encodings) > 0:
-                    matches = face_recognition.compare_faces(st.session_state.known_face_encodings, encoding, tolerance=st.session_state.tolerance)
-                    face_distances = face_recognition.face_distance(st.session_state.known_face_encodings, encoding)
-                    
-                    best_match_index = np.argmin(face_distances)
-                    if matches[best_match_index]:
-                        # It's a known face
-                        if is_smiling and best_match_index not in st.session_state.smiled_faces:
-                            st.session_state.smile_count += 1
-                            st.session_state.smiled_faces.add(best_match_index)
-                            smile_counter_placeholder.markdown(f'<p class="counter">{st.session_state.smile_count}</p>', unsafe_allow_html=True)
-                    else:
-                        # It's a new face
-                        st.session_state.known_face_encodings.append(encoding)
-                        if is_smiling:
-                            st.session_state.smile_count += 1
-                            st.session_state.smiled_faces.add(len(st.session_state.known_face_encodings) - 1)
-                            smile_counter_placeholder.markdown(f'<p class="counter">{st.session_state.smile_count}</p>', unsafe_allow_html=True)
 
+                cv2.rectangle(img, (box[0], box[1]), (box[2], box[3]),
+                              (0, 255, 0) if is_smiling else (0, 0, 255), 2)
+
+                encodings = st.session_state.known_face_encodings
+                if encodings:
+                    sims = cosine_similarity(np.array(encodings), encoding).flatten()
+                    best_idx = np.argmax(sims)
+                    if sims[best_idx] > st.session_state.tolerance:
+                        if is_smiling and best_idx not in st.session_state.smiled_faces:
+                            st.session_state.smile_count += 1
+                            st.session_state.smiled_faces.add(best_idx)
+                    else:
+                        encodings.append(encoding.flatten())
+                        if is_smiling:
+                            idx = len(encodings) - 1
+                            st.session_state.smile_count += 1
+                            st.session_state.smiled_faces.add(idx)
                 else:
-                    # This is the first face detected
-                    st.session_state.known_face_encodings.append(encoding)
+                    encodings.append(encoding.flatten())
                     if is_smiling:
                         st.session_state.smile_count += 1
                         st.session_state.smiled_faces.add(0)
-                        smile_counter_placeholder.markdown(f'<p class="counter">{st.session_state.smile_count}</p>', unsafe_allow_html=True)
 
-        except (requests.RequestException, requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
-            # Handle cases where backend is not available
-            print(f"Could not connect to backend: {e}")
+                count_placeholder.markdown(
+                    f"<div class='smile-count'>😊 {st.session_state.smile_count}</div>", unsafe_allow_html=True)
+
+        except Exception as e:
+            print(f"Error: {e}")
 
         return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-
-# --- Main Application ---
-webrtc_ctx = webrtc_streamer(
+# --- Stream Camera ---
+webrtc_streamer(
     key="smile-detector",
     video_transformer_factory=SmileDetector,
     rtc_configuration=RTCConfiguration(
-        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-    ),
+        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
     media_stream_constraints={"video": True, "audio": False},
     async_processing=True,
 )
-
-if not webrtc_ctx.state.playing:
-    st.info("Click 'START' to begin smile detection.")
-
-st.markdown("---")
-st.markdown("Built with ❤️ using Streamlit and FastAPI.")
