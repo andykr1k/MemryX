@@ -9,12 +9,12 @@ def main():
     """
     # Command to run FastAPI backend with uvicorn
     backend_command = [
-        sys.executable, "-m", "uvicorn", "Backend:app", "--host", "127.0.0.1", "--port", "8000"
+        sys.executable, "-m", "uvicorn", "backend:app", "--host", "127.0.0.1", "--port", "8000"
     ]
 
     # Command to run Streamlit frontend
     frontend_command = [
-        sys.executable, "-m", "streamlit", "run", "Frontend.py"
+        sys.executable, "-m", "streamlit", "run", "frontend.py"
     ]
     
     print("Starting FastAPI backend...")
@@ -45,13 +45,4 @@ def main():
         print("Shutdown complete.")
 
 if __name__ == "__main__":
-    # Optional: Check for critical packages
-    # try:
-    #     import insightface
-    #     import onnxruntime
-    #     print("InsightFace and ONNX Runtime are installed.")
-    # except ImportError as e:
-    #     print(f"Missing dependency: {e.name}. Please install it.")
-    #     sys.exit(1)
-
     main()
